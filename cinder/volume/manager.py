@@ -738,6 +738,11 @@ class VolumeManager(manager.CleanableManager,
             raise exception.VolumeAttached(volume_id=volume.id)
         self._check_is_our_resource(volume)
 
+        if unmanage_only and volume.encryption_key_id is not None:
+            raise exception.Invalid(
+                reason=_("Unmanaging encrypted volumes is not "
+                         "supported."))
+
         if unmanage_only and cascade:
             # This could be done, but is ruled out for now just
             # for simplicity.
@@ -2737,7 +2742,9 @@ class VolumeManager(manager.CleanableManager,
 
             # Don't allow volume with replicas to be migrated
             rep_status = volume.replication_status
-            if rep_status is not None and rep_status != 'disabled':
+            if(rep_status is not None and rep_status not in
+                    [fields.ReplicationStatus.DISABLED,
+                     fields.ReplicationStatus.NOT_CAPABLE]):
                 _retype_error(context, volume, old_reservations,
                               new_reservations, status_update)
                 msg = _("Volume must not be replicated.")

@@ -831,6 +831,20 @@ class VolumeTestCase(base.BaseVolumeTestCase):
             self.assertEqual("available", volume_ref.status)
             mock_del_vol.assert_called_once_with(volume)
 
+    def test_unmanage_encrypted_volume_fails(self):
+        volume = tests_utils.create_volume(
+            self.context,
+            encryption_key_id=fake.ENCRYPTION_KEY_ID,
+            **self.volume_params)
+        self.volume.create_volume(self.context, volume)
+        manager = vol_manager.VolumeManager()
+        self.assertRaises(exception.Invalid,
+                          manager.delete_volume,
+                          self.context,
+                          volume,
+                          unmanage_only=True)
+        self.volume.delete_volume(self.context, volume)
+
     def test_get_volume_different_tenant(self):
         """Test can't get volume of another tenant when viewable_admin_meta."""
         volume = tests_utils.create_volume(self.context,
@@ -946,7 +960,9 @@ class VolumeTestCase(base.BaseVolumeTestCase):
         self.volume.delete_volume(self.context, volume_src)
 
     @mock.patch('cinder.volume.flows.api.create_volume.get_flow')
-    def test_create_volume_from_snapshot_with_types(self, _get_flow):
+    @mock.patch('cinder.objects.volume.Volume.get_by_id')
+    def test_create_volume_from_snapshot_with_types(
+            self, _get_by_id, _get_flow):
         """Test volume create from snapshot with types including mistmatch."""
         volume_api = cinder.volume.api.API()
 
@@ -1008,7 +1024,9 @@ class VolumeTestCase(base.BaseVolumeTestCase):
                           snapshot=snapshot_obj)
 
     @mock.patch('cinder.volume.flows.api.create_volume.get_flow')
-    def test_create_volume_from_source_with_types(self, _get_flow):
+    @mock.patch('cinder.objects.volume.Volume.get_by_id')
+    def test_create_volume_from_source_with_types(
+            self, _get_by_id, _get_flow):
         """Test volume create from source with types including mistmatch."""
         volume_api = cinder.volume.api.API()
         foo_type = fake_volume.fake_volume_type_obj(
@@ -1060,7 +1078,9 @@ class VolumeTestCase(base.BaseVolumeTestCase):
                           source_volume=source_vol)
 
     @mock.patch('cinder.volume.flows.api.create_volume.get_flow')
-    def test_create_volume_from_source_with_same_backend(self, _get_flow):
+    @mock.patch('cinder.objects.volume.Volume.get_by_id')
+    def test_create_volume_from_source_with_same_backend(
+            self, _get_by_id, _get_flow):
         """Test volume create from source with type mismatch same backend."""
         volume_api = cinder.volume.api.API()
 
@@ -1105,7 +1125,9 @@ class VolumeTestCase(base.BaseVolumeTestCase):
                           source_volume=source_vol)
 
     @mock.patch('cinder.volume.flows.api.create_volume.get_flow')
-    def test_create_from_source_and_snap_only_one_backend(self, _get_flow):
+    @mock.patch('cinder.objects.volume.Volume.get_by_id')
+    def test_create_from_source_and_snap_only_one_backend(
+            self, _get_by_id, _get_flow):
         """Test create from source and snap with type mismatch one backend."""
         volume_api = cinder.volume.api.API()
 

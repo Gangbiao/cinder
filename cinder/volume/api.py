@@ -39,6 +39,8 @@ from cinder import flow_utils
 from cinder.i18n import _
 from cinder.image import cache as image_cache
 from cinder.image import glance
+from cinder.message import api as message_api
+from cinder.message import message_field
 from cinder import objects
 from cinder.objects import base as objects_base
 from cinder.objects import fields
@@ -59,7 +61,6 @@ from cinder.volume.flows.api import manage_existing
 from cinder.volume import rpcapi as volume_rpcapi
 from cinder.volume import utils as volume_utils
 from cinder.volume import volume_types
-
 
 allow_force_upload_opt = cfg.BoolOpt('enable_force_upload',
                                      default=False,
@@ -108,6 +109,7 @@ class API(base.Base):
         self.availability_zones = []
         self.availability_zones_last_fetched = None
         self.key_manager = key_manager.API(CONF)
+        self.message = message_api.API()
         super(API, self).__init__(db_driver)
 
     def list_availability_zones(self, enable_cache=False, refresh_cache=False):
@@ -334,6 +336,9 @@ class API(base.Base):
                 if flow_engine.storage.fetch('refresh_az'):
                     self.list_availability_zones(enable_cache=True,
                                                  refresh_cache=True)
+                # Refresh the object here, otherwise things ain't right
+                vref = objects.Volume.get_by_id(
+                    context, vref['id'])
                 LOG.info("Create volume request issued successfully.",
                          resource=vref)
                 return vref
@@ -406,6 +411,17 @@ class API(base.Base):
 
         if not unmanage_only:
             volume.assert_not_frozen()
+
+        if unmanage_only and volume.encryption_key_id is not None:
+            msg = _("Unmanaging encrypted volumes is not supported.")
+            e = exception.Invalid(reason=msg)
+            self.message.create(
+                context,
+                message_field.Action.UNMANAGE_VOLUME,
+                resource_uuid=volume.id,
+                detail=message_field.Detail.UNMANAGE_ENC_NOT_SUPPORTED,
+                exception=e)
+            raise e
 
         # Build required conditions for conditional update
         expected = {
@@ -1693,6 +1709,15 @@ class API(base.Base):
     def manage_existing(self, context, host, cluster_name, ref, name=None,
                         description=None, volume_type=None, metadata=None,
                         availability_zone=None, bootable=False):
+
+        if 'source-name' in ref:
+            vol_id = volume_utils.extract_id_from_volume_name(
+                ref['source-name'])
+            if vol_id and volume_utils.check_already_managed_volume(vol_id):
+                raise exception.InvalidVolume(
+                    _("Unable to manage existing volume."
+                      " The volume is already managed"))
+
         if volume_type and 'extra_specs' not in volume_type:
             extra_specs = volume_types.get_volume_type_extra_specs(
                 volume_type['id'])
